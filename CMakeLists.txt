@@ -1,8 +1,5 @@
 
 cmake_minimum_required(VERSION ${CMAKE_VERSION})
-
-#set(VCPKG_TARGET_TRIPLET "x64-windows-static")
-
 project(CmakeVMHelp CXX)
 
 set(CMAKE_VERBOSE_MAKEFILE ON CACHE BOOL "Detail output" FORCE)
@@ -15,11 +12,9 @@ set(COMPILER_FILES
         ./gdt.cpp
         ./plugin.cpp
         ./Track.cpp
-        ./Track.h
-        main.hpp
 )
 
-add_compile_options(/utf-8)
+add_compile_options(/utf-8 /W3 /WX)
 link_directories(pluginsdk)
 add_library(${PROJECT_NAME} SHARED ${COMPILER_FILES})
 

@@ -1,18 +1,17 @@
 ﻿#pragma once
 
 
+// std library
 #include <cstdio>
 #include <map>
 #include <string>
 #include <vector>
 
-
-
-
+// 3rd library
 #include <capstone/capstone.h>
 #include <unicorn/unicorn.h>
 
-
+// x64dbg library
 #include "pluginsdk/bridgemain.h"
 #include "pluginsdk/_plugins.h"
 #include "pluginsdk/_scriptapi_argument.h"

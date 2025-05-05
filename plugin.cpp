@@ -2,8 +2,6 @@
 #include "Track.h"
 #include "plugin.h"
 
-#include "main.hpp"
-
 #define MAX_SCAN_SIZE 0x1000
 
 typedef void (*CBCONDFUNC)(CBTYPE cbType, void *Info);
@@ -64,7 +62,7 @@ void track_execute_continue(CBTYPE cbType, void *pInfo) {
 }
 
 //在这里初始化插件数据.
-bool pluginInit(PLUG_INITSTRUCT *initStruct) {
+bool InitImpl(PLUG_INITSTRUCT *initStruct) {
     InitializeCriticalSection(&m_dbg_cmd_cond_lock);
 
     if (!m_Track.engine_init()) {
@@ -75,12 +73,12 @@ bool pluginInit(PLUG_INITSTRUCT *initStruct) {
 }
 
 //在这里取消初始化插件数据(清除菜单可选)
-bool pluginStop() {
+bool StopImpl() {
     return true;
 }
 
 //这里有GUI/Menu相关的东西吗.
-void pluginSetup() {
+void SetupImpl() {
     _plugin_menuaddentry(hMenu, 1001, "关于\"" PLUGIN_NAME "\"");
 
     _plugin_menuaddentry(hMenuDisasm, 2001, "执行到跳出内存区域");
@@ -142,16 +140,11 @@ void track_execute_exit(int flags) {
     DWORD process_id = DbgGetProcessId();
     DWORD thread_id  = DbgGetThreadId();
 
+    // 设置 callback ...
     m_Track.set_mem_context(process_id, thread_id);
     m_Track.set_reg_context(lpRegDump, true, thread_id);
     m_Track.mem_map_range(lpRegDump.regcontext.cip);
-    
-    MessageBoxW(hwndDlg, L"1", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
-
     m_Track.mem_map_range(lpRegDump.regcontext.csp);
-
-    MessageBoxW(hwndDlg, L"2", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
-
 
     _track_mem_range pmem_range = { 0 };
     if (!get_addr_mem_range(m_Track.m_process_info.Process, lpRegDump.regcontext.cip, &pmem_range)) {
@@ -162,17 +155,16 @@ void track_execute_exit(int flags) {
 
 
     _track_exit_msg exit_msg;
+    // run unicorn
     m_Track.start_track(&exit_msg);
-
-    MessageBoxW(hwndDlg, L"safe", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
 
     if (exit_msg.exit_base != NULL) {
         bool         is_dbg_bp  = false;
         uint64_t     bp_base    = exit_msg.exit_base;
         _track_insn *track_insn = m_Track.get_execute_last_insn();
         if (track_insn->insn.id == X86_INS_INT3) {
-            BPXTYPE bptype = DbgGetBpxTypeAt(track_insn->insn.address);
-            if (bptype == BPXTYPE::bp_normal && DbgIsBpDisabled(track_insn->insn.address) == false) {
+            BPXTYPE bptype2 = DbgGetBpxTypeAt(track_insn->insn.address);
+            if (bptype2 == BPXTYPE::bp_normal && DbgIsBpDisabled(track_insn->insn.address) == false) {
                 //执行到dbg设置的断点上
                 is_dbg_bp = true;
             }
@@ -182,9 +174,7 @@ void track_execute_exit(int flags) {
                 if (exit_msg.next_base != NULL && DbgMemIsValidReadPtr(exit_msg.next_base))
                     bp_base = exit_msg.next_base;
             }
-
-            MessageBoxW(hwndDlg, L"safe2", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
-
+            
             _dbg_cond_cmd pDbgCondCmd;
             pDbgCondCmd.thread_id = thread_id;
             pDbgCondCmd.no_cmd    = false;
@@ -247,11 +237,10 @@ void plugin_GuiEvent(CBTYPE bType, void *pInfo) {
 //Debug回调
 void plugin_DebugEvent(CBTYPE bType, void *pInfo) {
     if (bType == CB_BREAKPOINT) {
-        PLUG_CB_BREAKPOINT *pBreakpoint = (PLUG_CB_BREAKPOINT *) pInfo;
+        // PLUG_CB_BREAKPOINT *pBreakpoint = (PLUG_CB_BREAKPOINT *) pInfo;
         DbgCmdExecCondCome(bType, pInfo);
     } else if (bType == CB_STEPPED) {
-        PLUG_CB_STEPPED *pStepped = (PLUG_CB_STEPPED *) pInfo;
-
+        // PLUG_CB_STEPPED *pStepped = (PLUG_CB_STEPPED *) pInfo;
         DbgCmdExecCondCome(bType, pInfo);
     }
 }
