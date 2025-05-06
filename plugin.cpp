@@ -208,8 +208,7 @@ void track_execute_exit(int flags) {
             DbgCmdExecCondV(&pDbgCondCmd, "bp 0x%llx, \"%s\", ssshort", bp_base, PLUGIN_NAME);
             DbgCmdExecCondV(&pDbgCondCmd, "bpcond %llx, \"tid()==0x%x\"", bp_base, thread_id);
             DbgCmdExecCondV(&pDbgCondCmd, "go");
-            MessageBoxW(hwndDlg, L"safe3", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
-
+            
             if (flags == 1) {
                 pDbgCondCmd.no_cmd = true;
                 DbgCmdSetCondV(&pDbgCondCmd, 1000 * 30, CB_BREAKPOINT, track_execute_continue, "cip==0x%llx", bp_base);

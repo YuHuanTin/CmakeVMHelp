@@ -1,0 +1,1 @@
+copy C:\\Users\\YuHuanTin\\Desktop\\plugin_VMHelp\\cmake-build-debug\\CmakeVMHelp.dll D:\\test\\snapshot_2025-03-15_15-57\\release\\x64\\plugins\\CmakeVMHelp.dp64 /Y

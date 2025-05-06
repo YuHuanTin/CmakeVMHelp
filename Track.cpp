@@ -476,26 +476,44 @@ bool Track::mem_map_range(uint64_t address) {
         return bSuccess;
     }
     mem_info = mem_info_1;
-    do {
-        // auto   mem_buffer = std::make_unique<uint8_t[]>(mem_info.RegionSize);
-        auto mem_buffer = new uint8_t[mem_info.RegionSize];
 
-        SIZE_T read_size = 0;
-        if (ReadProcessMemory(hProcess, mem_info.BaseAddress, mem_buffer, mem_info.RegionSize, &read_size)) {
-            _plugin_logprintf("uc_mem_map %llX [%llX]\n", (uintptr_t) mem_info.BaseAddress, mem_info.RegionSize);
+    // FIX 映射 gs,fs 段寄存器的时候跳过 ( readprocessmemory 会失败 )
+    if (mem_info.BaseAddress == 0) {
+        // FIX CRASH WHEN unicorn FETCH EXCEPTION
+        // MUST RETURN TRUE TO AVOID THE EXCEPTION
+        if (uc_err err;
+            err = m_VME.sim_uc_mem_map((uint64_t) mem_info.BaseAddress, 0x1000, UC_PROT_ALL),
+            err != UC_ERR_OK) {
+            bSuccess = false;
+            MessageBox(hwndDlg, std::format("gs/fs uc_mem_map err: {:02x}\n", static_cast<int>(err)).c_str(), PLUGIN_NAME, MB_OK | MB_ICONERROR);
+        } else {
+            bSuccess = true;
+        }
+        return bSuccess;
+    }
+    do {
+        // FIX too big!
+        if (mem_info.RegionSize > 0xFFFFFFFF - 1) {
+            bSuccess = false;
+            break;
+        }
+        auto   mem_buffer = std::make_unique<uint8_t[]>(mem_info.RegionSize);
+        SIZE_T read_size  = 0;
+        if (ReadProcessMemory(hProcess, mem_info.BaseAddress, mem_buffer.get(), mem_info.RegionSize, &read_size)) {
+            // _plugin_logprintf("uc_mem_map %llX [%llX]\n", (uintptr_t) mem_info.BaseAddress, mem_info.RegionSize);
 
             if (uc_err mapRet;
                 mapRet = m_VME.sim_uc_mem_map((uintptr_t) mem_info.BaseAddress, mem_info.RegionSize, mem_win_protect_to_uc_protect(mem_info.Protect)),
                 mapRet == UC_ERR_OK) {
                 if (uc_err writeRet;
-                    writeRet = m_VME.sim_uc_mem_write((uintptr_t) mem_info.BaseAddress, mem_buffer, mem_info.RegionSize),
+                    writeRet = m_VME.sim_uc_mem_write((uintptr_t) mem_info.BaseAddress, mem_buffer.get(), mem_info.RegionSize),
                     writeRet == UC_ERR_OK) {
                     bSuccess = true;
                 } else {
                     _plugin_logprintf("uc_mem_map_write err: %d\n", writeRet);
                 }
             } else {
-                MessageBox(hwndDlg, std::format("uc_mem_map err: {:02x}\n", (int) mapRet).c_str(), PLUGIN_NAME, MB_OK | MB_ICONERROR);
+                // MessageBox(hwndDlg, std::format("uc_mem_map err: {:02x}\n", (int) mapRet).c_str(), PLUGIN_NAME, MB_OK | MB_ICONERROR);
                 _plugin_logprintf("uc_mem_map err: %d\n", mapRet);
             }
         }
@@ -524,11 +542,8 @@ bool Track::callback_event_mem_unmapped(uc_engine *uc, uc_mem_type type, uint64_
         case UC_MEM_WRITE_UNMAPPED:
         case UC_MEM_FETCH_UNMAPPED: {
             bSuccess = info->mem_map_range(address);
-
-
             break;
         }
-
         case UC_MEM_WRITE_PROT:
             break;
         case UC_MEM_READ_PROT:
