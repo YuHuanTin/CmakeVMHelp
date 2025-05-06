@@ -1,6 +1,5 @@
-#include "pch.h"
-#include "Track.h"
 #include "plugin.h"
+#include "Track.h"
 
 #define MAX_SCAN_SIZE 0x1000
 
@@ -20,6 +19,13 @@ RTL_CRITICAL_SECTION       m_dbg_cmd_cond_lock;
 std::vector<_dbg_cond_cmd> m_dbg_cmd_cond;
 Track                      m_Track;
 
+int  pluginHandle;
+HWND hwndDlg;
+int  hMenu;
+int  hMenuDisasm;
+int  hMenuDump;
+int  hMenuStack;
+
 //GUI回调
 void plugin_GuiEvent(CBTYPE bType, void *pInfo);
 
@@ -38,28 +44,8 @@ bool DbgCmdExecCondV(_dbg_cond_cmd *pCond, const char *_FormatCmd, ...);
 //执行条件命令 实现函数
 bool DbgCmdExecCondCome(CBTYPE nCondType, void *pInfo);
 
-
 //启动跟踪执行,直到遇见设置的断点,或不可控退出
 void track_execute();
-
-//当遇到仿真器不能处理的异常时,设置那时的断点,命中时执行此回调
-void track_execute_continue(CBTYPE cbType, void *pInfo) {
-    if (cbType == CB_BREAKPOINT) {
-        //跟踪断点
-        while (DbgIsRunning() == true) {
-            Sleep(10);
-        }
-        PLUG_CB_BREAKPOINT *pBreakpoint = (PLUG_CB_BREAKPOINT *) pInfo;
-
-        BPXTYPE bptype = DbgGetBpxTypeAt(pBreakpoint->breakpoint->addr);
-        if (bptype != bp_none) {
-            DbgCmdExecV("bpc %llx", pBreakpoint->breakpoint->addr);
-        }
-
-        track_execute();
-    } else
-        if (cbType == CB_STEPPED) {}
-}
 
 //在这里初始化插件数据.
 bool InitImpl(PLUG_INITSTRUCT *initStruct) {
@@ -89,6 +75,46 @@ void SetupImpl() {
 
     _plugin_registercallback(pluginHandle, CB_BREAKPOINT, (CBPLUGIN) &plugin_DebugEvent);
     _plugin_registercallback(pluginHandle, CB_STEPPED, (CBPLUGIN) &plugin_DebugEvent);
+}
+
+bool pluginit(PLUG_INITSTRUCT *initStruct) {
+    initStruct->pluginVersion = PLUGIN_VERSION;
+    initStruct->sdkVersion    = PLUG_SDKVERSION;
+    strncpy_s(initStruct->pluginName, PLUGIN_NAME, sizeof(PLUGIN_NAME));
+    pluginHandle = initStruct->pluginHandle;
+    return InitImpl(initStruct);
+}
+
+bool plugstop() {
+    return StopImpl();
+}
+
+void plugsetup(PLUG_SETUPSTRUCT *setupStruct) {
+    hwndDlg     = setupStruct->hwndDlg;
+    hMenu       = setupStruct->hMenu;
+    hMenuDisasm = setupStruct->hMenuDisasm;
+    hMenuDump   = setupStruct->hMenuDump;
+    hMenuStack  = setupStruct->hMenuStack;
+    SetupImpl();
+}
+
+//当遇到仿真器不能处理的异常时,设置那时的断点,命中时执行此回调
+void track_execute_continue(CBTYPE cbType, void *pInfo) {
+    if (cbType == CB_BREAKPOINT) {
+        //跟踪断点
+        while (DbgIsRunning() == true) {
+            Sleep(10);
+        }
+        PLUG_CB_BREAKPOINT *pBreakpoint = (PLUG_CB_BREAKPOINT *) pInfo;
+
+        BPXTYPE bptype = DbgGetBpxTypeAt(pBreakpoint->breakpoint->addr);
+        if (bptype != bp_none) {
+            DbgCmdExecV("bpc %llx", pBreakpoint->breakpoint->addr);
+        }
+
+        track_execute();
+    } else
+        if (cbType == CB_STEPPED) {}
 }
 
 //获取地址到内存的范围
@@ -174,7 +200,7 @@ void track_execute_exit(int flags) {
                 if (exit_msg.next_base != NULL && DbgMemIsValidReadPtr(exit_msg.next_base))
                     bp_base = exit_msg.next_base;
             }
-            
+
             _dbg_cond_cmd pDbgCondCmd;
             pDbgCondCmd.thread_id = thread_id;
             pDbgCondCmd.no_cmd    = false;
@@ -244,7 +270,6 @@ void plugin_DebugEvent(CBTYPE bType, void *pInfo) {
         DbgCmdExecCondCome(bType, pInfo);
     }
 }
-
 
 //格式化字符串 执行Dbg命令
 bool DbgCmdExecV(const char *_FormatCmd, ...) {

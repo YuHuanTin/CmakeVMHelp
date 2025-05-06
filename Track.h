@@ -6,71 +6,76 @@
 #include "VMExecute.h"
 
 struct _process_info {
-	DWORD ProcessId;
-	DWORD ThreadId;
-	HANDLE Process;
-	HANDLE Thread;
+    DWORD  ProcessId;
+    DWORD  ThreadId;
+    HANDLE Process;
+    HANDLE Thread;
 };
+
 struct _track_insn {
-	cs_insn insn;
+    cs_insn insn;
 };
+
 struct _track_exit_msg {
-	int exit_code;//0:虚拟机退出 1:不在跟踪范围退出
-	int exit_insn_flags;//0.无特殊指令 1.特殊指令 ljmp
-	uint64_t exit_base;//导致退出的base
-	uint64_t next_base;//解析选择的base
-	size_t track_num;//跟踪数量
-
+    int      exit_code;       //0:虚拟机退出 1:不在跟踪范围退出
+    int      exit_insn_flags; //0.无特殊指令 1.特殊指令 ljmp
+    uint64_t exit_base;       //导致退出的base
+    uint64_t next_base;       //解析选择的base
+    size_t   track_num;       //跟踪数量
 };
+
 struct _track_mem_range {
-	uint64_t base;
-	uint64_t end;
+    uint64_t base;
+    uint64_t end;
 };
-class Track
-{
+
+class Track {
 public:
-	//初始化引擎
-	bool engine_init();
-	//设置内存环境  先设置内存环境
-	bool set_mem_context(DWORD process_id, DWORD thread_id);
-	//设置寄存器环境  process_id == 0 将不设置段寄存器 eflags_zero_tf == true 设置tf位为0
-	bool set_reg_context(REGDUMP regdump,bool eflags_zero_tf = false, DWORD thread_id = 0);
-	//设置内存跟踪范围
-	void set_mem_track_range(bool only,uint64_t addr,uint64_t end);
-	_track_mem_range* find_mem_track_range(uint64_t addr);
+    //初始化引擎
+    bool engine_init();
 
-	//开始仿真跟踪
-	uc_err start_track(_track_exit_msg* exit_msg);
+    //设置内存环境  先设置内存环境
+    bool set_mem_context(DWORD process_id, DWORD thread_id);
 
+    //设置寄存器环境  process_id == 0 将不设置段寄存器 eflags_zero_tf == true 设置tf位为0
+    bool set_reg_context(REGDUMP regdump, bool eflags_zero_tf = false, DWORD thread_id = 0);
 
-	//获取最后一条执行指令
-	_track_insn* get_execute_last_insn();
-	//寻找下一条指令地址
-	uint64_t find_next_base(int* insn_flags = 0);
+    //设置内存跟踪范围
+    void set_mem_track_range(bool only, uint64_t addr, uint64_t end);
+
+    _track_mem_range *find_mem_track_range(uint64_t addr);
+
+    //开始仿真跟踪
+    uc_err start_track(_track_exit_msg *exit_msg);
 
 
-	VMExecute m_VME;
-	_process_info m_process_info;
-	_track_exit_msg m_exit_msg;
-	std::vector<_track_insn> m_track_insn;
+    //获取最后一条执行指令
+    _track_insn *get_execute_last_insn();
 
-	bool m_enable_track_mem_range;//是否启用跟踪范围
-	std::vector<_track_mem_range> m_track_mem_range;//跟踪的内存范围
-	_track_mem_range m_only_range;//当存在这个时其他范围限定都将不起作用
+    //寻找下一条指令地址
+    uint64_t find_next_base(int *insn_flags = 0);
 
-	//映射给定进程的地址范围到虚拟机
-	bool mem_map_range(uint64_t address);
 
-	void print_mem_region();
+    VMExecute                m_VME;
+    _process_info            m_process_info;
+    _track_exit_msg          m_exit_msg;
+    std::vector<_track_insn> m_track_insn;
+
+    bool                          m_enable_track_mem_range; //是否启用跟踪范围
+    std::vector<_track_mem_range> m_track_mem_range;        //跟踪的内存范围
+    _track_mem_range              m_only_range;             //当存在这个时其他范围限定都将不起作用
+
+    //映射给定进程的地址范围到虚拟机
+    bool mem_map_range(uint64_t address);
+
+    void print_mem_region();
+
 private:
-	SegmentSelector m_back_ss;//初始化时需要ss段为0环权限,执行代码时恢复为3环权限
-	uc_hook m_handle_hook_mem_unmapped;
-	uc_hook m_handle_hook_code_execute;
+    SegmentSelector m_back_ss; //初始化时需要ss段为0环权限,执行代码时恢复为3环权限
+    uc_hook         m_handle_hook_mem_unmapped;
+    uc_hook         m_handle_hook_code_execute;
 
-	static bool callback_event_mem_unmapped(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t value, void* user_data);
-	static void callback_evnet_code(uc_engine* uc, uint64_t addr, uint32_t size, void* user_data);
-	
+    static bool callback_event_mem_unmapped(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *user_data);
 
-	
-
+    static void callback_evnet_code(uc_engine *uc, uint64_t addr, uint32_t size, void *user_data);
 };

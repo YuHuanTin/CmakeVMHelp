@@ -3,6 +3,7 @@
 
 // std library
 #include <cstdio>
+#include <format>
 #include <map>
 #include <string>
 #include <vector>
@@ -46,7 +47,6 @@
 #pragma comment(lib, "lz4/lz4_x64.lib")
 #pragma comment(lib, "TitanEngine/TitanEngine_x64.lib")
 #pragma comment(lib, "XEDParse/XEDParse_x64.lib")
-// #pragma comment(lib, "yara/yara_x64.lib")
 #else
 #pragma comment(lib, "x32dbg.lib")
 #pragma comment(lib, "x32bridge.lib")
@@ -55,5 +55,12 @@
 #pragma comment(lib, "lz4/lz4_x86.lib")
 #pragma comment(lib, "TitanEngine/TitanEngine_x86.lib")
 #pragma comment(lib, "XEDParse/XEDParse_x86.lib")
-// #pragma comment(lib, "yara/yara_x86.lib")
 #endif //_WIN64
+
+// superglobal variables
+extern int  pluginHandle;
+extern HWND hwndDlg;
+extern int  hMenu;
+extern int  hMenuDisasm;
+extern int  hMenuDump;
+extern int  hMenuStack;

@@ -9,45 +9,8 @@
 #define PLUGIN_NAME "VMHelp"
 #define PLUGIN_VERSION 1
 
+PLUG_EXPORT bool pluginit(PLUG_INITSTRUCT *initStruct);
 
-// superglobal variables
-extern int  pluginHandle;
-extern HWND hwndDlg;
-extern int  hMenu;
-extern int  hMenuDisasm;
-extern int  hMenuDump;
-extern int  hMenuStack;
+PLUG_EXPORT bool plugstop();
 
-int  pluginHandle;
-HWND hwndDlg;
-int  hMenu;
-int  hMenuDisasm;
-int  hMenuDump;
-int  hMenuStack;
-
-bool InitImpl(PLUG_INITSTRUCT *Init_struct);
-
-bool StopImpl();
-
-void SetupImpl();
-
-PLUG_EXPORT bool pluginit(PLUG_INITSTRUCT *initStruct) {
-    initStruct->pluginVersion = PLUGIN_VERSION;
-    initStruct->sdkVersion    = PLUG_SDKVERSION;
-    strncpy_s(initStruct->pluginName, PLUGIN_NAME, sizeof(PLUGIN_NAME));
-    pluginHandle = initStruct->pluginHandle;
-    return InitImpl(initStruct);
-}
-
-PLUG_EXPORT bool plugstop() {
-    return StopImpl();
-}
-
-PLUG_EXPORT void plugsetup(PLUG_SETUPSTRUCT *setupStruct) {
-    hwndDlg     = setupStruct->hwndDlg;
-    hMenu       = setupStruct->hMenu;
-    hMenuDisasm = setupStruct->hMenuDisasm;
-    hMenuDump   = setupStruct->hMenuDump;
-    hMenuStack  = setupStruct->hMenuStack;
-    SetupImpl();
-}
+PLUG_EXPORT void plugsetup(PLUG_SETUPSTRUCT *setupStruct);

@@ -1,5 +1,5 @@
-#include "pch.h"
 #include "Track.h"
+#include "plugin.h"
 
 #define _NO_NTDLL_ACT_
 #define _NO_NTDLL_CRT_
@@ -458,45 +458,55 @@ void Track::callback_evnet_code(uc_engine *uc, uint64_t addr, uint32_t size_n, v
 bool Track::mem_map_range(uint64_t address) {
     bool   bSuccess = false;
     HANDLE hProcess = m_process_info.Process;
-    if (hProcess != NULL) {
-        MEMORY_BASIC_INFORMATION mem_info;
-        MEMORY_BASIC_INFORMATION mem_info_1;
-        //先获取AllocationBase
-        if (VirtualQueryEx(hProcess, (LPCVOID) address, &mem_info_1, sizeof(mem_info_1)) != NULL) {
-            if (VirtualQueryEx(hProcess, (LPCVOID) mem_info_1.AllocationBase, &mem_info_1, sizeof(mem_info_1)) != NULL) {
-                mem_info = mem_info_1;
-                do {
-                    void * mem_buff  = malloc(mem_info.RegionSize);
-                    SIZE_T read_size = 0;
-                    if (ReadProcessMemory(hProcess, (LPCVOID) mem_info.BaseAddress, mem_buff, mem_info.RegionSize, &read_size)) {
-                        uc_err mapRet;
-                        uc_err writeRet;
+    if (hProcess == nullptr) {
+        _plugin_logprintf("Get hProcess failed, GetLastError: %llX\n", GetLastError());
+        return bSuccess;
+    }
+    MEMORY_BASIC_INFORMATION mem_info;
+    MEMORY_BASIC_INFORMATION mem_info_1;
 
-                        _plugin_logprintf("uc_mem_map %llX [%llX]\n", (uint64_t) (uintptr_t) mem_info.BaseAddress, mem_info.RegionSize);
+    // 先获取 AllocationBase
+    if (VirtualQueryEx(hProcess, (LPCVOID) address, &mem_info_1, sizeof(mem_info_1)) == NULL) {
+        _plugin_logprintf("VirtualQueryEx failed, GetLastError: %llX\n", GetLastError());
+        return bSuccess;
+    }
 
-                        if (mapRet = m_VME.sim_uc_mem_map((uint64_t) (uintptr_t) mem_info.BaseAddress, mem_info.RegionSize, mem_win_protect_to_uc_protect(mem_info.Protect)),
-                            mapRet == UC_ERR_OK) {
-                            if (writeRet = m_VME.sim_uc_mem_write((uint64_t) (uintptr_t) mem_info.BaseAddress, mem_buff, mem_info.RegionSize),
-                                writeRet == UC_ERR_OK) {
-                                bSuccess = true;
-                            } else {
-                                _plugin_logprintf("uc_mem_map_write err: %d\n", writeRet);
-                            }
-                        } else {
-                            _plugin_logprintf("uc_mem_map err: %d\n", mapRet);
-                        }
-                    }
-                    free(mem_buff);
+    if (VirtualQueryEx(hProcess, mem_info_1.AllocationBase, &mem_info_1, sizeof(mem_info_1)) == NULL) {
+        _plugin_logprintf("VirtualQueryEx failed, GetLastError: %llX\n", GetLastError());
+        return bSuccess;
+    }
+    mem_info = mem_info_1;
+    do {
+        // auto   mem_buffer = std::make_unique<uint8_t[]>(mem_info.RegionSize);
+        auto mem_buffer = new uint8_t[mem_info.RegionSize];
 
-                    mem_info.BaseAddress = (PVOID) ((uint64_t) mem_info.BaseAddress + mem_info.RegionSize);
-                    if (VirtualQueryEx(hProcess, (LPCVOID) mem_info.BaseAddress, &mem_info, sizeof(mem_info)) == NULL)
-                        break;
-                    if (mem_info_1.AllocationBase != mem_info.AllocationBase)
-                        break;
-                } while ((uint64_t) mem_info.BaseAddress <= address);
+        SIZE_T read_size = 0;
+        if (ReadProcessMemory(hProcess, mem_info.BaseAddress, mem_buffer, mem_info.RegionSize, &read_size)) {
+            _plugin_logprintf("uc_mem_map %llX [%llX]\n", (uintptr_t) mem_info.BaseAddress, mem_info.RegionSize);
+
+            if (uc_err mapRet;
+                mapRet = m_VME.sim_uc_mem_map((uintptr_t) mem_info.BaseAddress, mem_info.RegionSize, mem_win_protect_to_uc_protect(mem_info.Protect)),
+                mapRet == UC_ERR_OK) {
+                if (uc_err writeRet;
+                    writeRet = m_VME.sim_uc_mem_write((uintptr_t) mem_info.BaseAddress, mem_buffer, mem_info.RegionSize),
+                    writeRet == UC_ERR_OK) {
+                    bSuccess = true;
+                } else {
+                    _plugin_logprintf("uc_mem_map_write err: %d\n", writeRet);
+                }
+            } else {
+                MessageBox(hwndDlg, std::format("uc_mem_map err: {:02x}\n", (int) mapRet).c_str(), PLUGIN_NAME, MB_OK | MB_ICONERROR);
+                _plugin_logprintf("uc_mem_map err: %d\n", mapRet);
             }
         }
-    }
+
+        mem_info.BaseAddress = (PVOID) ((uint64_t) mem_info.BaseAddress + mem_info.RegionSize);
+        if (VirtualQueryEx(hProcess, mem_info.BaseAddress, &mem_info, sizeof(mem_info)) == NULL)
+            break;
+        if (mem_info_1.AllocationBase != mem_info.AllocationBase)
+            break;
+    } while ((uint64_t) mem_info.BaseAddress <= address);
+
     return bSuccess;
 }
 
