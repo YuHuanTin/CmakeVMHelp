@@ -143,7 +143,7 @@ public:
     uc_err sim_uc_mem_map(uint64_t address, size_t size, uint32_t perms) {
         // MessageBox(hwndDlg, std::format("try to map addr: 0x{:016X} [{:016X}]\n", address, size).c_str(), "hack",
         //     MB_OK | MB_ICONINFORMATION);
-        
+
         return uc_mem_map(m_uc, address, size, perms);
     }
 
