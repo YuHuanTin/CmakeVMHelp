@@ -493,7 +493,7 @@ bool Track::mem_map_range(uint64_t address) {
     }
     do {
         // FIX too big!
-        if (mem_info.RegionSize > 0xFFFFFFFF - 1) {
+        if (mem_info.RegionSize > 0x7ffe0000 - 1) {
             bSuccess = false;
             break;
         }
