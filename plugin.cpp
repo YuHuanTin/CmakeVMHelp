@@ -1,23 +1,9 @@
 #include "plugin.h"
 #include "Track.h"
 
-#define MAX_SCAN_SIZE 0x1000
-
-typedef void (*CBCONDFUNC)(CBTYPE cbType, void *Info);
-
-struct _dbg_cond_cmd {
-    DWORD       thread_id;  //只有在此线程断下才可执行,如果ID为0 则任意线程可执行
-    bool        no_cmd;     //ture 不执行cmd 只执行回调函数
-    uint64_t    valid_time; //有效截至时间
-    CBTYPE      type;       //CB_STEPPED  触发时机:如单步后
-    std::string cond;       //条件表达式  当表达式成立才可执行
-    std::string cmd;        //命令         执行的命令
-    CBCONDFUNC  callback;   //回调函数 为NULL时不调用
-};
-
-RTL_CRITICAL_SECTION       m_dbg_cmd_cond_lock;
-std::vector<_dbg_cond_cmd> m_dbg_cmd_cond;
-Track                      m_Track;
+RTL_CRITICAL_SECTION      m_dbg_cmd_cond_lock;
+std::vector<dbg_cond_cmd> m_dbg_cmd_cond;
+Track                     m_Track;
 
 int  pluginHandle;
 HWND hwndDlg;
@@ -26,26 +12,11 @@ int  hMenuDisasm;
 int  hMenuDump;
 int  hMenuStack;
 
-//GUI回调
-void plugin_GuiEvent(CBTYPE bType, void *pInfo);
-
-//Debug回调
-void plugin_DebugEvent(CBTYPE bType, void *pInfo);
-
-//格式化字符串 执行Dbg命令
-bool DbgCmdExecV(const char *_FormatCmd, ...);
-
-//设置命令条件 valid_time == -1 永久有效
-bool DbgCmdSetCondV(_dbg_cond_cmd *pCond, uint64_t valid_time, CBTYPE nCondType, CBCONDFUNC callback, const char *_FormatCond, ...);
-
-//推送命令到队列
-bool DbgCmdExecCondV(_dbg_cond_cmd *pCond, const char *_FormatCmd, ...);
-
-//执行条件命令 实现函数
-bool DbgCmdExecCondCome(CBTYPE nCondType, void *pInfo);
-
-//启动跟踪执行,直到遇见设置的断点,或不可控退出
-void track_execute();
+enum UI_ID :uint16_t {
+    About         = 1001,
+    RUN_UNTIL_RET = 2001,
+    RUN_TRACE     = 2002
+};
 
 //在这里初始化插件数据.
 bool InitImpl(PLUG_INITSTRUCT *initStruct) {
@@ -63,18 +34,26 @@ bool StopImpl() {
     return true;
 }
 
-//这里有GUI/Menu相关的东西吗.
+// GUI/Menu 注册
 void SetupImpl() {
-    _plugin_menuaddentry(hMenu, 1001, "关于\"" PLUGIN_NAME "\"");
+    _plugin_menuaddentry(hMenu, About, "关于\"" PLUGIN_NAME "\"");
 
-    _plugin_menuaddentry(hMenuDisasm, 2001, "执行到跳出内存区域");
-    _plugin_menuaddentry(hMenuDisasm, 2002, "跟踪执行");
+    _plugin_menuaddentry(hMenuDisasm, RUN_UNTIL_RET, "执行到跳出内存区域");
+    _plugin_menuaddentry(hMenuDisasm, RUN_TRACE, "跟踪执行");
 
     _plugin_registercallback(pluginHandle, CB_MENUENTRY, (CBPLUGIN) &plugin_GuiEvent);
 
 
     _plugin_registercallback(pluginHandle, CB_BREAKPOINT, (CBPLUGIN) &plugin_DebugEvent);
     _plugin_registercallback(pluginHandle, CB_STEPPED, (CBPLUGIN) &plugin_DebugEvent);
+
+    // 注册命令方便运行
+    if (!_plugin_registercommand(pluginHandle, "vm_run_until_ret", [](int argc, char **argv) {
+        Track_Execute_Until_Ret(0);
+        return true;
+    }, true)) {
+        _plugin_logprintf("[" PLUGIN_NAME "]: register command failed, may some other already registered?");
+    }
 }
 
 bool pluginit(PLUG_INITSTRUCT *initStruct) {
@@ -98,7 +77,7 @@ void plugsetup(PLUG_SETUPSTRUCT *setupStruct) {
     SetupImpl();
 }
 
-//当遇到仿真器不能处理的异常时,设置那时的断点,命中时执行此回调
+// 当遇到仿真器不能处理的异常时,设置那时的断点,命中时执行此回调
 void track_execute_continue(CBTYPE cbType, void *pInfo) {
     if (cbType == CB_BREAKPOINT) {
         //跟踪断点
@@ -112,13 +91,13 @@ void track_execute_continue(CBTYPE cbType, void *pInfo) {
             DbgCmdExecV("bpc %llx", pBreakpoint->breakpoint->addr);
         }
 
-        track_execute();
+        Track_Execute();
     } else
         if (cbType == CB_STEPPED) {}
 }
 
-//获取地址到内存的范围
-bool get_addr_mem_range(HANDLE hProcess, uint64_t address, _track_mem_range *mem_rage) {
+// 获取地址到内存的范围
+bool get_addr_mem_range(HANDLE hProcess, uint64_t address, TrackMemRange *mem_rage) {
     bool bSuccess = false;
     if (hProcess != NULL) {
         MEMORY_BASIC_INFORMATION mem_info;
@@ -145,8 +124,8 @@ bool get_addr_mem_range(HANDLE hProcess, uint64_t address, _track_mem_range *mem
     return bSuccess;
 }
 
-//启动跟踪执行到一个退出点
-void track_execute_exit(int flags) {
+// 启动跟踪执行到一个退出点
+void Track_Execute_Until_Ret(int flags) {
     if (DbgIsRunning() == true) {
         MessageBoxW(hwndDlg, L"调试器需要在停止状态下执行.", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
         return;
@@ -172,7 +151,7 @@ void track_execute_exit(int flags) {
     m_Track.mem_map_range(lpRegDump.regcontext.cip);
     m_Track.mem_map_range(lpRegDump.regcontext.csp);
 
-    _track_mem_range pmem_range = { 0 };
+    TrackMemRange pmem_range = { 0 };
     if (!get_addr_mem_range(m_Track.m_process_info.Process, lpRegDump.regcontext.cip, &pmem_range)) {
         MessageBoxW(hwndDlg, L"获取内存区域失败.", PLUGIN_NAME_utf16, MB_OK | MB_ICONERROR);
         return;
@@ -180,14 +159,14 @@ void track_execute_exit(int flags) {
     m_Track.set_mem_track_range(true, pmem_range.base, pmem_range.end);
 
 
-    _track_exit_msg exit_msg;
+    TrackExitMsg exit_msg;
     // run unicorn
     m_Track.start_track(&exit_msg);
 
     if (exit_msg.exit_base != NULL) {
-        bool         is_dbg_bp  = false;
-        uint64_t     bp_base    = exit_msg.exit_base;
-        _track_insn *track_insn = m_Track.get_execute_last_insn();
+        bool        is_dbg_bp  = false;
+        uint64_t    bp_base    = exit_msg.exit_base;
+        TrackInsn *track_insn = m_Track.get_execute_last_insn();
         if (track_insn->insn.id == X86_INS_INT3) {
             BPXTYPE bptype2 = DbgGetBpxTypeAt(track_insn->insn.address);
             if (bptype2 == BPXTYPE::bp_normal && DbgIsBpDisabled(track_insn->insn.address) == false) {
@@ -201,7 +180,7 @@ void track_execute_exit(int flags) {
                     bp_base = exit_msg.next_base;
             }
 
-            _dbg_cond_cmd pDbgCondCmd;
+            dbg_cond_cmd pDbgCondCmd;
             pDbgCondCmd.thread_id = thread_id;
             pDbgCondCmd.no_cmd    = false;
             DbgCmdSetCondV(&pDbgCondCmd, 1000 * 30, CB_STEPPED, nullptr, "1");
@@ -228,30 +207,29 @@ void track_execute_exit(int flags) {
     }
 }
 
-//启动跟踪执行,直到遇见设置的断点,或不可控退出
-void track_execute() {
-    track_execute_exit(1);
+// 启动跟踪执行,直到遇见设置的断点,或不可控退出
+void Track_Execute() {
+    Track_Execute_Until_Ret(1);
 }
 
-//GUI回调
+// GUI回调
 void plugin_GuiEvent(CBTYPE bType, void *pInfo) {
     if (bType == CB_MENUENTRY) {
         PLUG_CB_MENUENTRY *pEntry = (PLUG_CB_MENUENTRY *) pInfo;
         switch (pEntry->hEntry) {
-            case 1001: //注册时填的菜单ID
-            {
-                MessageBoxW(hwndDlg, L"TLD.XiaoYao", PLUGIN_NAME_utf16, MB_OK | MB_ICONINFORMATION);
+            case About: {
+                MessageBox(hwndDlg, "TLD.XiaoYao", PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
                 break;
             }
-            case 2001: {
+            case RUN_UNTIL_RET: {
                 m_Track.m_track_insn.clear();
-                track_execute_exit(0);
+                Track_Execute_Until_Ret(0);
                 m_Track.m_track_insn.clear();
                 break;
             }
-            case 2002: {
+            case RUN_TRACE: {
                 m_Track.m_track_insn.clear();
-                track_execute();
+                Track_Execute();
             }
             default:
                 break;
@@ -259,7 +237,7 @@ void plugin_GuiEvent(CBTYPE bType, void *pInfo) {
     }
 }
 
-//Debug回调
+// Debug回调
 void plugin_DebugEvent(CBTYPE bType, void *pInfo) {
     if (bType == CB_BREAKPOINT) {
         // PLUG_CB_BREAKPOINT *pBreakpoint = (PLUG_CB_BREAKPOINT *) pInfo;
@@ -270,7 +248,7 @@ void plugin_DebugEvent(CBTYPE bType, void *pInfo) {
     }
 }
 
-//格式化字符串 执行Dbg命令
+// 格式化字符串 执行Dbg命令
 bool DbgCmdExecV(const char *_FormatCmd, ...) {
     bool    bret   = false;
     va_list vlArgs = NULL;
@@ -288,8 +266,8 @@ bool DbgCmdExecV(const char *_FormatCmd, ...) {
     return bret;
 }
 
-//设置命令条件
-bool DbgCmdSetCondV(_dbg_cond_cmd *pCond, uint64_t valid_time, CBTYPE nCondType, CBCONDFUNC callback, const char *_FormatCond, ...) {
+// 设置命令条件
+bool DbgCmdSetCondV(dbg_cond_cmd *pCond, uint64_t valid_time, CBTYPE nCondType, CBCONDFUNC callback, const char *_FormatCond, ...) {
     bool    bret   = true;
     va_list vlArgs = NULL;
     va_start(vlArgs, _FormatCond);
@@ -313,8 +291,8 @@ bool DbgCmdSetCondV(_dbg_cond_cmd *pCond, uint64_t valid_time, CBTYPE nCondType,
     return bret;
 }
 
-//推送命令到队列
-bool DbgCmdExecCondV(_dbg_cond_cmd *pCond, const char *_FormatCmd, ...) {
+// 推送命令到队列
+bool DbgCmdExecCondV(dbg_cond_cmd *pCond, const char *_FormatCmd, ...) {
     bool    bret   = true;
     va_list vlArgs = NULL;
     va_start(vlArgs, _FormatCmd);
@@ -334,7 +312,7 @@ bool DbgCmdExecCondV(_dbg_cond_cmd *pCond, const char *_FormatCmd, ...) {
     return bret;
 }
 
-//执行条件命令 实现函数
+// 执行条件命令 实现函数
 bool DbgCmdExecCondCome(CBTYPE nCondType, void *pInfo) {
     bool     bRet  = false;
     size_t   nSize = m_dbg_cmd_cond.size();

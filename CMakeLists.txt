@@ -14,7 +14,7 @@ set(COMPILER_FILES
         ./Track.cpp
 )
 
-add_compile_options(/utf-8 /W3 /WX)
+add_compile_options(/utf-8 /W2 /WX)
 link_directories(pluginsdk)
 add_library(${PROJECT_NAME} SHARED ${COMPILER_FILES})
 

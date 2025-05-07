@@ -292,11 +292,11 @@ void Track::set_mem_track_range(bool only, uint64_t addr, uint64_t end) {
         m_only_range.base = addr;
         m_only_range.end  = end;
     } else {
-        _track_mem_range mem_range;
+        TrackMemRange mem_range;
         mem_range.base = addr;
         mem_range.end  = end;
 
-        _track_mem_range *find_mem_range = find_mem_track_range(addr);
+        TrackMemRange *find_mem_range = find_mem_track_range(addr);
         if (find_mem_range == nullptr) {
             m_track_mem_range.push_back(mem_range);
         } else {
@@ -306,7 +306,7 @@ void Track::set_mem_track_range(bool only, uint64_t addr, uint64_t end) {
     }
 }
 
-_track_mem_range *Track::find_mem_track_range(uint64_t addr) {
+TrackMemRange *Track::find_mem_track_range(uint64_t addr) {
     size_t nSize = m_track_mem_range.size();
     for (size_t i = 0; i < nSize; i++) {
         if (m_track_mem_range[i].base <= addr && m_track_mem_range[i].end > addr) {
@@ -316,7 +316,10 @@ _track_mem_range *Track::find_mem_track_range(uint64_t addr) {
     return nullptr;
 }
 
-uc_err Track::start_track(_track_exit_msg *exit_msg) {
+uc_err Track::start_track(TrackExitMsg *exit_msg) {
+    if (debugFileOutput_) {
+        debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+    }
     uc_err err;
 #ifdef _WIN64
     uint64_t lpCip = 0;
@@ -334,11 +337,26 @@ uc_err Track::start_track(_track_exit_msg *exit_msg) {
 
     err = m_VME.sim_uc_emu_start(lpCip, NULL, NULL, NULL);
 
+    // write track data to file
+    if (debugFileOutput_) {
+        if (!debugFile_.is_open()) {
+            debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+        }
+
+        for (const auto &[insn]: m_track_insn) {
+            const std::string dis_str = std::format("[0x{:016X}] {:} {:}\n", insn.address, insn.mnemonic, insn.op_str);
+            debugFile_.write(dis_str.c_str(), dis_str.size());
+        }
+        debugFile_.flush();
+        debugFile_.close();
+    }
+
     track_num = m_track_insn.size() - track_num;
+    _plugin_logprintf("[" PLUGIN_NAME "]: end track");
 
     m_exit_msg.exit_insn_flags = 0;
     m_exit_msg.track_num       = track_num;
-    _track_insn *track_insn    = get_execute_last_insn();
+    TrackInsn *track_insn      = get_execute_last_insn();
     if (track_insn != nullptr) {
         m_exit_msg.exit_base = track_insn->insn.address;
         m_exit_msg.next_base = find_next_base(&m_exit_msg.exit_insn_flags);
@@ -350,17 +368,13 @@ uc_err Track::start_track(_track_exit_msg *exit_msg) {
     return err;
 }
 
-_track_insn *Track::get_execute_last_insn() {
-    size_t vsize = m_track_insn.size();
-    if (vsize > 0) {
-        return &m_track_insn[vsize - 1];
-    }
-    return nullptr;
+TrackInsn *Track::get_execute_last_insn() {
+    return m_track_insn.empty() ? nullptr : &(*m_track_insn.rbegin());
 }
 
 uint64_t Track::find_next_base(int *insn_flags) {
-    uint64_t     nRet       = 0;
-    _track_insn *track_insn = get_execute_last_insn();
+    uint64_t   nRet       = 0;
+    TrackInsn *track_insn = get_execute_last_insn();
 
     uintptr_t reg_rsp = 0;
     uintptr_t retbase = 0;
@@ -446,10 +460,27 @@ void Track::callback_evnet_code(uc_engine *uc, uint64_t addr, uint32_t size_n, v
         MessageBox(NULL, "反汇编出现解析致命错误,停止继续执行.\n", NULL, NULL);
         info->m_VME.sim_uc_emu_stop();
     } else {
-        _track_insn tr_insn;
+        TrackInsn tr_insn;
         tr_insn.insn        = *insn;
-        tr_insn.insn.detail = NULL; //指针为null
+        tr_insn.insn.detail = nullptr; //指针为null
 
+        // need about [32 GB max, 22 GB avg, 9 GB min] memory, ignore all previous instructions
+        if (info->m_track_insn.size() > 0x2108421) {
+            // write track data to file
+            if (info->debugFileOutput_) {
+                if (!info->debugFile_.is_open()) {
+                    info->debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+                }
+
+                for (const auto &[insn]: info->m_track_insn) {
+                    const std::string dis_str = std::format("[0x{:016X}] {:} {:}\n", insn.address, insn.mnemonic, insn.op_str);
+                    info->debugFile_.write(dis_str.c_str(), dis_str.size());
+                }
+                info->debugFile_.flush();
+            }
+            info->m_track_insn.clear();
+            _plugin_logprintf("track_insn too big, clear :)\n");
+        }
         info->m_track_insn.push_back(tr_insn);
     }
 }
