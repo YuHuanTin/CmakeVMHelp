@@ -2,7 +2,6 @@
 
 
 #define ALIGN_TO_4KB(value) (((value) + 0xFFF) & ~0xFFF)
-#define DebugFileOutputPath "log.txt"
 #include "gdt.h"
 #include "VMExecute.h"
 
@@ -74,7 +73,6 @@ private:
     SegmentSelector m_back_ss; //初始化时需要ss段为0环权限,执行代码时恢复为3环权限
     uc_hook         m_handle_hook_mem_unmapped;
     uc_hook         m_handle_hook_code_execute;
-    bool            debugFileOutput_ = true;
     std::fstream    debugFile_;
 
     static bool callback_event_mem_unmapped(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *user_data);

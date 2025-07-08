@@ -6,6 +6,8 @@
 #include "ntdll/ntstatus.h"
 #include "ntdll/ntdll.h"
 
+#include "Config.h"
+
 __forceinline uint32_t mem_win_protect_to_uc_protect(DWORD win_protect_c) {
     DWORD win_protect = win_protect_c & (~(PAGE_TARGETS_INVALID | PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE));
     if (win_protect == PAGE_EXECUTE)
@@ -80,18 +82,18 @@ bool Track::set_reg_context(REGDUMP regdump, bool eflags_zero_tf, DWORD thread_i
     err = m_VME.sim_uc_reg_write(UC_X86_REG_RFLAGS, &reg_eflags.all);
 
 #else
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_ESP, &regdump.regcontext.csp);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EAX, &regdump.regcontext.cax);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EBX, &regdump.regcontext.cbx);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_ECX, &regdump.regcontext.ccx);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EDX, &regdump.regcontext.cdx);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EBP, &regdump.regcontext.cbp);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_ESI, &regdump.regcontext.csi);
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EDI, &regdump.regcontext.cdi);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_ESP, &regdump.regcontext.csp);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EAX, &regdump.regcontext.cax);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EBX, &regdump.regcontext.cbx);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_ECX, &regdump.regcontext.ccx);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EDX, &regdump.regcontext.cdx);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EBP, &regdump.regcontext.cbp);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_ESI, &regdump.regcontext.csi);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EDI, &regdump.regcontext.cdi);
 
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EIP, &regdump.regcontext.cip);
-	
-	err = m_VME.sim_uc_reg_write(UC_X86_REG_EFLAGS, &reg_eflags.all);
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EIP, &regdump.regcontext.cip);
+
+    err = m_VME.sim_uc_reg_write(UC_X86_REG_EFLAGS, &reg_eflags.all);
 #endif
 
 
@@ -166,7 +168,7 @@ bool Track::set_reg_context(REGDUMP regdump, bool eflags_zero_tf, DWORD thread_i
 #ifdef _WIN64
             const uint64_t m_gdt_address = 0xc000000000000000;
 #else
-			const uint64_t m_gdt_address = 0xc0000000;
+            const uint64_t m_gdt_address = 0xc0000000;
 #endif
             struct SegmentDescriptor *gdt = (struct SegmentDescriptor *) malloc(31 * sizeof(struct SegmentDescriptor));
 
@@ -225,7 +227,7 @@ bool Track::set_reg_context(REGDUMP regdump, bool eflags_zero_tf, DWORD thread_i
 #ifdef _WIN64
             err = m_VME.sim_uc_reg_write(UC_X86_REG_CS, &r_cs);
 #else
-			err = m_VME.sim_uc_reg_write(UC_X86_REG_CS, &r_cs_32);
+            err = m_VME.sim_uc_reg_write(UC_X86_REG_CS, &r_cs_32);
 #endif
             err = m_VME.sim_uc_reg_write(UC_X86_REG_SS, &r_ss); //0环
             err = m_VME.sim_uc_reg_write(UC_X86_REG_DS, &r_ds);
@@ -317,16 +319,16 @@ TrackMemRange *Track::find_mem_track_range(uint64_t addr) {
 }
 
 uc_err Track::start_track(TrackExitMsg *exit_msg) {
-    if (debugFileOutput_) {
-        debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+    if (Config::getInstance().getConfig().isDebug) {
+        debugFile_.open(Config::getInstance().getConfig().trace_log_path, std::ios::out | std::ios::app);
     }
     uc_err err;
 #ifdef _WIN64
     uint64_t lpCip = 0;
     m_VME.sim_uc_reg_read(UC_X86_REG_RIP, &lpCip);
 #else
-	uint32_t lpCip = 0;
-	m_VME.sim_uc_reg_read(UC_X86_REG_EIP, &lpCip);
+    uint32_t lpCip = 0;
+    m_VME.sim_uc_reg_read(UC_X86_REG_EIP, &lpCip);
 #endif
     if (m_handle_hook_code_execute == NULL)
         err = m_VME.sim_uc_hook_add(&m_handle_hook_code_execute, UC_HOOK_CODE, callback_evnet_code, this, 1, 0);
@@ -338,9 +340,9 @@ uc_err Track::start_track(TrackExitMsg *exit_msg) {
     err = m_VME.sim_uc_emu_start(lpCip, NULL, NULL, NULL);
 
     // write track data to file
-    if (debugFileOutput_) {
+    if (Config::getInstance().getConfig().isDebug) {
         if (!debugFile_.is_open()) {
-            debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+            debugFile_.open(Config::getInstance().getConfig().trace_log_path, std::ios::out | std::ios::app);
         }
 
         for (const auto &[insn]: m_track_insn) {
@@ -389,7 +391,7 @@ uint64_t Track::find_next_base(int *insn_flags) {
 #ifdef _WIN64
                 m_VME.sim_uc_reg_read(X86_REG_RSP, &reg_rsp);
 #else
-			m_VME.sim_uc_reg_read(X86_REG_ESP, &reg_rsp);
+                m_VME.sim_uc_reg_read(X86_REG_ESP, &reg_rsp);
 #endif
                 m_VME.sim_uc_mem_read(reg_rsp, &retbase, sizeof(char *));
                 nRet = retbase;
@@ -464,12 +466,11 @@ void Track::callback_evnet_code(uc_engine *uc, uint64_t addr, uint32_t size_n, v
         tr_insn.insn        = *insn;
         tr_insn.insn.detail = nullptr; //指针为null
 
-        // need about [32 GB max, 22 GB avg, 9 GB min] memory, ignore all previous instructions
-        if (info->m_track_insn.size() > 0x2108421) {
+        if (info->m_track_insn.size() > Config::getInstance().getConfig().max_trace_num_once) {
             // write track data to file
-            if (info->debugFileOutput_) {
+            if (Config::getInstance().getConfig().isDebug) {
                 if (!info->debugFile_.is_open()) {
-                    info->debugFile_.open(DebugFileOutputPath, std::ios::out | std::ios::app);
+                    info->debugFile_.open(Config::getInstance().getConfig().trace_log_path, std::ios::out | std::ios::app);
                 }
 
                 for (const auto &[insn]: info->m_track_insn) {

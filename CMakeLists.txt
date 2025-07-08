@@ -6,18 +6,20 @@ set(CMAKE_VERBOSE_MAKEFILE ON CACHE BOOL "Detail output" FORCE)
 set(CMAKE_CXX_STANDARD 26)
 
 set(ENABLE_ASAN FALSE)
-set(ENABLE_MODULES FALSE)
 
 set(COMPILER_FILES
         ./gdt.cpp
         ./plugin.cpp
         ./Track.cpp
+        Config.cpp
+        Config.h
 )
 
 add_compile_options(/utf-8 /W2 /WX)
 link_directories(pluginsdk)
 add_library(${PROJECT_NAME} SHARED ${COMPILER_FILES})
 
+### 3rd party library
 find_package(capstone CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE capstone::capstone)
 
@@ -25,9 +27,13 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(unicorn_ REQUIRED IMPORTED_TARGET unicorn)
 target_link_libraries(${PROJECT_NAME} PRIVATE PkgConfig::unicorn_)
 
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 
+### library link
 target_link_libraries(${PROJECT_NAME} PRIVATE ntdll)
 
+### precompiled header
 target_precompile_headers(${PROJECT_NAME} PRIVATE pch.h)
 
 add_custom_command(
@@ -56,29 +62,4 @@ if (ENABLE_ASAN AND MSVC)
 
     file(COPY ${CMAKE_CXX_COMPILER_DIR}/clang_rt.asan_dynamic-x86_64.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
     message(AUTHOR_WARNING "Auto Copy x64-windows.dll to ${CMAKE_CURRENT_BINARY_DIR}...")
-endif ()
-if (ENABLE_MODULES AND MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /experimental:module /translateInclude)
-    # get complier root path
-    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH CMAKE_CXX_COMPILER_DIR)
-    cmake_path(GET CMAKE_CXX_COMPILER_DIR PARENT_PATH MODULE_ROOT_PATH)
-    cmake_path(GET MODULE_ROOT_PATH PARENT_PATH MODULE_ROOT_PATH)
-    cmake_path(GET MODULE_ROOT_PATH PARENT_PATH MODULE_ROOT_PATH)
-
-    # find if 'module' directory exists
-    if (EXISTS ${MODULE_ROOT_PATH}/modules)
-        set(MODULE_ROOT_PATH ${MODULE_ROOT_PATH}/modules)
-    endif ()
-    message(AUTHOR_WARNING "Module root path: ${MODULE_ROOT_PATH}")
-
-    target_sources(${PROJECT_NAME} PRIVATE
-            FILE_SET CXX_MODULES
-            # 导入模块目录和 CMakeLists.txt 所在目录
-            BASE_DIRS ${MODULE_ROOT_PATH} ${CMAKE_SOURCE_DIR}
-            # 导入标准库
-            FILES
-            ${MODULE_ROOT_PATH}/std.ixx
-            ${MODULE_ROOT_PATH}/std.compat.ixx
-            ${COMPILER_FILES}
-    )
 endif ()

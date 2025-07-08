@@ -1,6 +1,8 @@
 #include "plugin.h"
 #include "Track.h"
 
+#include "Config.h"
+
 RTL_CRITICAL_SECTION      m_dbg_cmd_cond_lock;
 std::vector<dbg_cond_cmd> m_dbg_cmd_cond;
 Track                     m_Track;
@@ -26,6 +28,9 @@ bool InitImpl(PLUG_INITSTRUCT *initStruct) {
         _plugin_logprintf("[" PLUGIN_NAME "] 插件引擎初始化失败.");
         return false;
     }
+
+    // 配置文件初始化
+    Config::getInstance();
     return true;
 }
 
@@ -164,8 +169,8 @@ void Track_Execute_Until_Ret(int flags) {
     m_Track.start_track(&exit_msg);
 
     if (exit_msg.exit_base != NULL) {
-        bool        is_dbg_bp  = false;
-        uint64_t    bp_base    = exit_msg.exit_base;
+        bool       is_dbg_bp  = false;
+        uint64_t   bp_base    = exit_msg.exit_base;
         TrackInsn *track_insn = m_Track.get_execute_last_insn();
         if (track_insn->insn.id == X86_INS_INT3) {
             BPXTYPE bptype2 = DbgGetBpxTypeAt(track_insn->insn.address);
