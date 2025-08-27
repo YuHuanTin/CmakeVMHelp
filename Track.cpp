@@ -166,7 +166,7 @@ bool Track::set_reg_context(REGDUMP regdump, bool eflags_zero_tf, DWORD thread_i
 
 
 #ifdef _WIN64
-            const uint64_t m_gdt_address = 0xc000000000000000;
+            const uint64_t m_gdt_address = 0xFFFFC00000000000;
 #else
             const uint64_t m_gdt_address = 0xc0000000;
 #endif
