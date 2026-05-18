@@ -1,5 +1,10 @@
 
 cmake_minimum_required(VERSION ${CMAKE_VERSION})
+
+#set(VCPKG_HOST_TRIPLET "x64-mingw-static")
+#set(VCPKG_TARGET_TRIPLET "x64-mingw-static")
+set(XDBG_SDK_PATH "D:\\snapshot_2026-04-20_19-04\\pluginsdk")
+
 project(CmakeVMHelp CXX)
 
 set(CMAKE_VERBOSE_MAKEFILE ON CACHE BOOL "Detail output" FORCE)
@@ -8,15 +13,17 @@ set(CMAKE_CXX_STANDARD 26)
 set(ENABLE_ASAN FALSE)
 
 set(COMPILER_FILES
-        ./gdt.cpp
-        ./plugin.cpp
-        ./Track.cpp
-        Config.cpp
-        Config.h
+        src/gdt.cpp
+        src/plugin.cpp
+        src/Track.cpp
+        src/Config.cpp
+        src/Config.h
 )
 
-add_compile_options(/utf-8 /W2 /WX)
-link_directories(pluginsdk)
+add_compile_options(-Wall -Wextra -Wpedantic -Wconversion)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${XDBG_SDK_PATH})
+link_directories(${XDBG_SDK_PATH})
 add_library(${PROJECT_NAME} SHARED ${COMPILER_FILES})
 
 ### 3rd party library
@@ -31,10 +38,15 @@ find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 
 ### library link
-target_link_libraries(${PROJECT_NAME} PRIVATE ntdll)
+if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    target_link_libraries(${PROJECT_NAME} PRIVATE x64dbg x64bridge)
+elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_link_libraries(${PROJECT_NAME} PRIVATE x32dbg x32bridge)
+endif ()
+target_link_libraries(${PROJECT_NAME} PRIVATE ntdll pthread)
 
 ### precompiled header
-target_precompile_headers(${PROJECT_NAME} PRIVATE pch.h)
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 add_custom_command(
         TARGET ${PROJECT_NAME}       # 关联的目标
