@@ -20,3 +20,20 @@ llvm-mingw
 ## 设置项
 
 - XDBG_SDK_PATH 将该选项设置为 xdbg 目录下的 pluginsdk 目录
+
+# 使用
+
+需要放置编译产物到 plugins 目录
+
+```
+CmakeVMHelp.dll -> CmakeVMHelp.dp64/dp32
+unicorn.dll
+capstone.dll
+```
+
+如果为 llvm-mingw ，则还需要放置
+
+```
+libc++.dll
+libunwind.dll
+```
