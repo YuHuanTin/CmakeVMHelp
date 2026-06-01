@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION ${CMAKE_VERSION})
 
 #set(VCPKG_HOST_TRIPLET "x64-mingw-static")
 #set(VCPKG_TARGET_TRIPLET "x64-mingw-static")
-set(XDBG_SDK_PATH "D:\\snapshot_2026-04-20_19-04\\pluginsdk")
+set(XDBG_SDK_PATH "D:\\snapshot_2026-05-27_12-11\\pluginsdk")
 
 project(CmakeVMHelp CXX)
 
@@ -13,11 +13,22 @@ set(CMAKE_CXX_STANDARD 26)
 set(ENABLE_ASAN FALSE)
 
 set(COMPILER_FILES
-        src/gdt.cpp
-        src/plugin.cpp
-        src/Track.cpp
-        src/Config.cpp
-        src/Config.h
+        src/_plugin_entry.cpp
+        src/_plugin_entry.h
+        src/GUI.cpp
+        src/GUI.h
+        src/Engine.cpp
+        src/Engine.h
+        src/CommandHandlers.cpp
+        src/CommandHandlers.h
+        src/utils/Dbg.cpp
+        src/utils/Dbg.h
+        src/pch.h
+        src/utils/Uc.cpp
+        src/utils/Uc.h
+        src/utils/StructDef.h
+        src/utils/CodeTraceLogger.cpp
+        src/utils/CodeTraceLogger.h
 )
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wconversion)
@@ -43,21 +54,19 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 elseif (CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_libraries(${PROJECT_NAME} PRIVATE x32dbg x32bridge)
 endif ()
-target_link_libraries(${PROJECT_NAME} PRIVATE ntdll pthread)
+target_link_libraries(${PROJECT_NAME} PRIVATE pthread)
 
 ### precompiled header
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 add_custom_command(
-        TARGET ${PROJECT_NAME}       # 关联的目标
-        POST_BUILD          # 指定在构建后执行
-        COMMAND ${CMAKE_SOURCE_DIR}/cp.bat
-        #        
-        #        COMMAND sh -c "echo 'Running custom shell script...' && ./my_script.sh $<TARGET_FILE:my_app>" # 示例：运行脚本，传递目标路径
-        #        # COMMAND cp $<TARGET_FILE:my_app> /path/to/deploy/ # 示例：复制文件
-        #        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} # (可选) 命令执行的工作目录
-        #        COMMENT "Running post-build steps for my_app..." # (可选) 构建时显示的消息
-        VERBATIM # (推荐) 确保特殊字符被正确传递给 shell
+        TARGET ${PROJECT_NAME}      # 关联的目标
+        POST_BUILD                  # 指定在构建后执行
+        COMMAND "${CMAKE_SOURCE_DIR}/cp.bat"
+        # 指定工作目录，确保 .bat 里的相对路径 ".\cmake-build-debug" 依然有效
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Running post-build steps asynchronously..."
+        VERBATIM                    # (推荐) 确保特殊字符被正确传递给 shell
 )
 
 if (ENABLE_ASAN AND MSVC)
