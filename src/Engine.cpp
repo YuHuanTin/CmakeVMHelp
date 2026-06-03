@@ -9,67 +9,94 @@
 #include "utils/Uc.h"
 
 void EmuEngine::run(StopReason stopReason) {
-    const auto regs = Dbg::GetRegs();
-
     stopReason_ = stopReason;
-    stopAddr_   = 0;
-    traceLogger_.reset();
-    auto [regionBase, regionSize] = Dbg::GetMemBaseWithSize(regs.cip);
-    runRegionBase_                = regionBase;
-    runRegionEnd_                 = regionBase + regionSize;
 
-    hostRegToEmu();
-    hostBasicMemToEmu(regs.cip, regs.csp);
-
-    // hook
-    uc_hook hookCodeHandle       = 0;
-    uc_hook hookMemValidHandle   = 0;
-    uc_hook hookMemInvalidHandle = 0;
-
-    auto err = uc_hook_add(uc_, &hookCodeHandle, UC_HOOK_CODE, reinterpret_cast<void *>(hookCode), this, 1, 0);
-    if (err != UC_ERR_OK) {
-        LOG("uc_hook_add code failed with %s", uc_strerror(err))
-    }
-
-    err = uc_hook_add(uc_, &hookMemValidHandle, UC_HOOK_MEM_VALID, reinterpret_cast<void *>(hookMemValid), this, 1, 0);
-    if (err != UC_ERR_OK) {
-        LOG("uc_hook_add mem valid failed with %s", uc_strerror(err))
-    }
-
-    err = uc_hook_add(uc_, &hookMemInvalidHandle, UC_HOOK_MEM_INVALID, reinterpret_cast<void *>(hookMemInvalid), this, 1, 0);
-    if (err != UC_ERR_OK) {
-        LOG("uc_hook_add mem invalid failed with %s", uc_strerror(err))
-    }
-
-    // run
+    // todo verify this
     uint64_t until = 0;
     if (stopReason == REACHED_CALL_FINISH) {
-        if (uc_mem_read(uc_, regs.csp, &until, sizeof(until)) != UC_ERR_OK) {
+        const auto regs = Dbg::GetRegs();
+        if (!DbgMemRead(regs.csp, &until, sizeof(until))) {
             until = 0;
         }
     }
 
-    err = uc_emu_start(uc_, regs.cip, until, 0, 0);
-    // refreshing last code
-    traceLogger_.flush(Uc::GetRegs(uc_));
-    if (err != UC_ERR_OK) {
-        LOG("uc_emu_start failed with %s", uc_strerror(err))
-    }
+    for (;;) {
+        const auto regs = Dbg::GetRegs();
 
-    if (hookCodeHandle != 0) {
-        uc_hook_del(uc_, hookCodeHandle);
-    }
-    if (hookMemValidHandle != 0) {
-        uc_hook_del(uc_, hookMemValidHandle);
-    }
-    if (hookMemInvalidHandle != 0) {
-        uc_hook_del(uc_, hookMemInvalidHandle);
-    }
+        emuStopAddr_   = 0;
+        emuExitReason_ = NORMAL;
 
-    unmapAllRegions();
+        auto [regionBase, regionSize] = Dbg::MemFindBaseAddrEnhanced(regs.cip);
+        runRegionBase_                = regionBase;
+        runRegionEnd_                 = regionBase + regionSize;
 
-    if (stopAddr_ != 0) {
-        Dbg::RunToAddr(stopAddr_);
+        hostRegToEmu();
+        hostBasicMemToEmu(regs.cip, regs.csp);
+
+        // hook
+        uc_hook hookCodeHandle       = 0;
+        uc_hook hookSyscallHandle    = 0;
+        uc_hook hookMemValidHandle   = 0;
+        uc_hook hookMemInvalidHandle = 0;
+
+        auto err = uc_hook_add(uc_, &hookCodeHandle, UC_HOOK_CODE, reinterpret_cast<void *>(hookCode), this, 1, 0);
+        if (err != UC_ERR_OK) {
+            LOG("uc_hook_add code failed with %s", uc_strerror(err))
+        }
+
+        err = uc_hook_add(uc_, &hookSyscallHandle, UC_HOOK_INSN, reinterpret_cast<void *>(hookSyscall), this, 1, 0, UC_X86_INS_SYSCALL);
+        if (err != UC_ERR_OK) {
+            LOG("uc_hook_add syscall failed with %s", uc_strerror(err))
+        }
+
+        err = uc_hook_add(uc_, &hookMemValidHandle, UC_HOOK_MEM_VALID, reinterpret_cast<void *>(hookMemValid), this, 1, 0);
+        if (err != UC_ERR_OK) {
+            LOG("uc_hook_add mem valid failed with %s", uc_strerror(err))
+        }
+
+        err = uc_hook_add(uc_, &hookMemInvalidHandle, UC_HOOK_MEM_INVALID, reinterpret_cast<void *>(hookMemInvalid), this, 1, 0);
+        if (err != UC_ERR_OK) {
+            LOG("uc_hook_add mem invalid failed with %s", uc_strerror(err))
+        }
+
+        // run
+        err = uc_emu_start(uc_, regs.cip, until, 0, 0);
+        // refreshing last code
+        traceLogger_.flush(Uc::GetRegs(uc_));
+        if (err != UC_ERR_OK && emuExitReason_ == NORMAL) {
+            LOG("uc_emu_start failed with %s", uc_strerror(err))
+        }
+
+        if (hookCodeHandle != 0) {
+            uc_hook_del(uc_, hookCodeHandle);
+        }
+        if (hookSyscallHandle != 0) {
+            uc_hook_del(uc_, hookSyscallHandle);
+        }
+        if (hookMemValidHandle != 0) {
+            uc_hook_del(uc_, hookMemValidHandle);
+        }
+        if (hookMemInvalidHandle != 0) {
+            uc_hook_del(uc_, hookMemInvalidHandle);
+        }
+
+        unmapAllRegions();
+
+        if (emuStopAddr_ != 0) {
+            LOG("switch to debugger, goto 0x%016llx", emuStopAddr_)
+            uint64_t dbgStopAddr = Dbg::RunToAddr(emuStopAddr_);
+            if (dbgStopAddr != emuStopAddr_) {
+                LOG("failed to run to syscall address, expected 0x%016llx, got 0x%016llx", emuStopAddr_, dbgStopAddr)
+                break;
+            }
+        }
+        if (emuExitReason_ == SYSCALL) {
+            traceLogger_.record(emuStopAddr_, "<before call>", "syscall", Dbg::GetRegs());
+            const auto nextAddr = Dbg::StepInto();
+            LOG("stepinto syscall, current cip = 0x%016llx", nextAddr)
+            continue;
+        }
+        return;
     }
 }
 
@@ -106,20 +133,20 @@ void EmuEngine::hookCode(uc_engine *uc, uint64_t address, uint32_t size, void *u
     switch (engine->stopReason_) {
         case PAGE_SWITCH:
             if (!(engine->runRegionBase_ <= address && address < engine->runRegionEnd_)) {
-                engine->stopAddr_ = address;
+                engine->emuStopAddr_ = address;
                 uc_emu_stop(uc);
             }
             break;
         case REACHED_BP:
             // 注意，只有断点启用时，才会有 type，否则不启用为 bp_none
             if (DbgGetBpxTypeAt(address) != bp_none) {
-                engine->stopAddr_ = address;
+                engine->emuStopAddr_ = address;
                 uc_emu_stop(uc);
             }
             break;
         case REACHED_INST:
             if (!engine->inst_target_.empty() && engine->inst_target_ == insn[0].mnemonic) {
-                engine->stopAddr_ = address;
+                engine->emuStopAddr_ = address;
                 uc_emu_stop(uc);
             }
             break;
@@ -129,6 +156,18 @@ void EmuEngine::hookCode(uc_engine *uc, uint64_t address, uint32_t size, void *u
             break;
     }
     cs_free(insn, count);
+}
+
+void EmuEngine::hookSyscall(uc_engine *uc, void *userData) {
+    auto *engine = static_cast<EmuEngine *>(userData);
+    if (engine == nullptr) {
+        return;
+    }
+
+    const auto regs        = Uc::GetRegs(uc);
+    engine->emuStopAddr_   = regs.cip;
+    engine->emuExitReason_ = SYSCALL;
+    uc_emu_stop(uc);
 }
 
 void EmuEngine::hookMemValid(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *userData) {
@@ -152,25 +191,25 @@ bool EmuEngine::hookMemInvalid(uc_engine *uc, uc_mem_type type, uint64_t address
     }
 
     try {
-        auto [pageBase, pageSize] = Dbg::GetMemBaseWithSize(address);
+        auto [pageBase, pageSize] = Dbg::MemFindBaseAddrEnhanced(address);
         engine->hostPageToEmu(pageBase, pageSize);
         return true;
     } catch (const std::exception &e) {
-        LOG("hookMemInvalid failed at %llx with %s", address, e.what())
+        LOG("hookMemInvalid failed at %llx with err '%s'", address, e.what())
         return false;
     }
 }
 
 void EmuEngine::hostBasicMemToEmu(size_t cip, size_t sp) {
     size_t teb                = DbgGetTebAddress(DbgGetThreadId());
-    auto [teb_base, teb_size] = Dbg::GetMemBaseWithSize(teb);
+    auto [teb_base, teb_size] = Dbg::MemFindBaseAddrEnhanced(teb);
 
     LOG("teb = %llx", teb)
     LOG("teb_base = %llx", teb_base)
     LOG("teb_size = %llx", teb_size)
 
-    auto [cip_base, cip_size] = Dbg::GetMemBaseWithSize(cip);
-    auto [sp_base, sp_size]   = Dbg::GetMemBaseWithSize(sp);
+    auto [cip_base, cip_size] = Dbg::MemFindBaseAddrEnhanced(cip);
+    auto [sp_base, sp_size]   = Dbg::MemFindBaseAddrEnhanced(sp);
     hostPageToEmu(cip_base, cip_size);
     hostPageToEmu(sp_base, sp_size);
     hostPageToEmu(teb_base, teb_size);
@@ -178,11 +217,7 @@ void EmuEngine::hostBasicMemToEmu(size_t cip, size_t sp) {
 
 void EmuEngine::hostPageToEmu(std::size_t pageBase, std::size_t pageSize) {
     LOG("[page-map] 0x%llx with size 0x%llx", pageBase, pageSize)
-    const auto buf = std::make_unique<uint8_t[]>(pageSize);
-    std::memset(buf.get(), 0, pageSize);
-    if (!DbgMemRead(pageBase, buf.get(), pageSize) && !Dbg::MemRead(pageBase, buf.get(), pageSize)) {
-        LOG("DbgMemRead failed from %llx with %llx", pageBase, pageSize);
-    }
+    const auto buf = Dbg::MemReadEnhanced(pageBase, pageSize);
 
     auto uc_err = uc_mem_map(uc_, pageBase, pageSize, UC_PROT_ALL);
     if (uc_err != UC_ERR_OK) {

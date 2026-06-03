@@ -2,18 +2,8 @@
 #include "Dbg.h"
 
 #include <format>
-#include <ostream>
 
 #include "src/_plugin_entry.h"
-
-std::tuple<size_t, size_t> Dbg::GetMemBaseWithSize(size_t addr) {
-    size_t size = 0;
-    size_t base = DbgMemFindBaseAddr(addr, &size);
-    if (base == 0) {
-        throw std::runtime_error("bad DbgMemFindBaseAddr call with addr: " + std::to_string(addr));
-    }
-    return std::make_tuple(base, size);
-}
 
 SimulateRegs Dbg::GetRegs() {
     REGDUMP_AVX512 regdump_avx512 = {};
@@ -89,27 +79,52 @@ void Dbg::EnableBpx(size_t addr) {
 
 size_t Dbg::RunToAddr(size_t addr) {
     if (DbgGetBpxTypeAt(addr) == BPXTYPE::bp_none) {
-        const auto str = std::format("bp 0x{:016X}, \"runtotarget\", ssshort", addr);
-        DbgCmdExecDirect(str.c_str());
+        // const auto str = std::format("bp 0x{:016X}, \"runtotarget\", ssshort", addr);
+        // DbgCmdExecDirect(str.c_str());
+
+        // auto set bp
+        DbgCmdExecDirect(std::format("go 0x{:016x}", addr).c_str());
     } else {
         if (DbgIsBpDisabled(addr)) {
             EnableBpx(addr);
         }
     }
     DbgCmdExecDirect("go");
+    _plugin_waituntilpaused();
     return GetRegs().cip;
 }
 
-bool Dbg::MemRead(size_t addr, uint8_t *buf_output, size_t size) {
+size_t Dbg::StepInto(int count) {
+    DbgCmdExecDirect(std::format("sti {}", count).c_str());
+    _plugin_waituntilpaused();
+    return GetRegs().cip;
+}
+
+std::unique_ptr<uint8_t[]> Dbg::MemReadEnhanced(size_t addr, size_t size) {
+    if (size == 0) {
+        LOG("[%s] failed with size 0 to read", __FUNCTION__)
+        return {};
+    }
+    auto buf = std::make_unique<uint8_t[]>(size);
+    std::memset(buf.get(), 0, size);
+
+    // read by xdbg api
+    if (DbgMemRead(addr, buf.get(), size)) {
+        return buf;
+    }
+    LOG("DbgMemRead failed, fallback to ReadProcessMemory at 0x%016llx size 0x%016llx", addr, size)
+
+    // read by self
     HANDLE hProcess    = DbgGetProcessHandle();
     size_t currentAddr = addr;
 
     while (currentAddr < addr + size) {
-        MEMORY_BASIC_INFORMATION mbi;
+        MEMORY_BASIC_INFORMATION mbi = {};
         if (!VirtualQueryEx(hProcess, reinterpret_cast<LPCVOID>(currentAddr), &mbi, sizeof(mbi))) {
-            LOG("VirtualQueryEx first failed")
+            LOG("VirtualQueryEx failed, addr = %llx, err = %lu", currentAddr, GetLastError())
             break;
         }
+        const auto chunkSize = mbi.RegionSize;
 
         // 只有处于已提交状态（MEM_COMMIT）的页面才能进行属性修改和读取
         if (mbi.State != MEM_COMMIT) {
@@ -131,28 +146,51 @@ bool Dbg::MemRead(size_t addr, uint8_t *buf_output, size_t size) {
                 SIZE_T bytesRead = 0;
                 if (!ReadProcessMemory(hProcess,
                         reinterpret_cast<LPCVOID>(currentAddr),
-                        buf_output + (currentAddr - addr),
-                        mbi.RegionSize,
+                        buf.get() + (currentAddr - addr),
+                        chunkSize,
                         &bytesRead)) {
-                    LOG("ReadProcessMemory failed, addr = %llx, size = %llx, err = %lu", currentAddr, mbi.RegionSize, GetLastError());
+                    LOG("ReadProcessMemory failed, addr = %llx, size = %llx, err = %lu", currentAddr, chunkSize, GetLastError());
                 }
             } else {
-                if (!VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(currentAddr), mbi.RegionSize, PAGE_READONLY, &oldProtect)) {
-                    LOG("[MemRead] VirtualProtectEx failed on committed page 0x%llx, size = 0x%llx, error = %lu", currentAddr, mbi.RegionSize, GetLastError());
+                if (!VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(currentAddr), chunkSize, PAGE_READONLY, &oldProtect)) {
+                    LOG("[MemRead] VirtualProtectEx failed on committed page 0x%llx, size = 0x%llx, error = %lu", currentAddr, chunkSize, GetLastError());
                 } else {
                     SIZE_T bytesRead = 0;
                     if (!ReadProcessMemory(hProcess,
                             reinterpret_cast<LPCVOID>(currentAddr),
-                            buf_output + (currentAddr - addr),
-                            mbi.RegionSize,
+                            buf.get() + (currentAddr - addr),
+                            chunkSize,
                             &bytesRead)) {
-                        LOG("ReadProcessMemory2 failed, addr = %llx, size = %llx, err = %lu", currentAddr, mbi.RegionSize, GetLastError());
+                        LOG("ReadProcessMemory2 failed, addr = %llx, size = %llx, err = %lu", currentAddr, chunkSize, GetLastError());
                     }
-                    VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(currentAddr), mbi.RegionSize, oldProtect, &dummyProtect);
+                    VirtualProtectEx(hProcess, reinterpret_cast<LPVOID>(currentAddr), chunkSize, oldProtect, &dummyProtect);
                 }
             }
         }
-        currentAddr += mbi.RegionSize;
+        currentAddr += chunkSize;
     }
-    return true;
+    return buf;
+}
+
+std::pair<size_t, size_t> Dbg::MemFindBaseAddrEnhanced(size_t addr) {
+    // size_t size = 0;
+    // size_t base = DbgMemFindBaseAddr(addr, &size); // todo, has bug
+    // if (base) {
+    //     return { base, size };
+    // }
+    // LOG("DbgMemFindBaseAddr query addr 0x%016llx base = 0, using fallback VirtualQueryEx", addr);
+
+    HANDLE hProcess = DbgGetProcessHandle();
+
+    MEMORY_BASIC_INFORMATION mbi = {};
+    if (!VirtualQueryEx(hProcess, reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
+        throw std::runtime_error(std::format("bad VirtualQueryEx call with addr: 0x{:016x}, err = {}", addr, GetLastError()));
+    }
+
+    const auto regionBase = reinterpret_cast<size_t>(mbi.BaseAddress);
+    const auto regionEnd  = regionBase + mbi.RegionSize;
+
+    LOG("[%s] regionBase = %016llx, regionEnd = %016llx, size = %016llx", __FUNCTION__, regionBase, regionEnd, mbi.RegionSize);
+
+    return { regionBase, 0x1000 };
 }

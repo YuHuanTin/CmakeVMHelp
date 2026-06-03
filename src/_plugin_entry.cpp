@@ -4,11 +4,25 @@
 
 #include "_plugin_entry.h"
 
-#include <print>
-
 #include "CommandHandlers.h"
 #include "Engine.h"
 #include "GUI.h"
+
+#ifdef OUTPUT_FILE
+void plugin_log_to_file(const char *fmt, ...) {
+    FILE *fp = nullptr;
+    if (fopen_s(&fp, OUTPUT_FILE, "ab") != 0 || fp == nullptr) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(fp, fmt, args);
+    va_end(args);
+
+    std::fclose(fp);
+}
+#endif
 
 PLUG_EXPORT bool pluginit(PLUG_INITSTRUCT *initStruct) {
     initStruct->pluginVersion = PLUGIN_VERSION;
@@ -50,6 +64,14 @@ void init_command_reg() {
     bRet = _plugin_registercommand(gPluginHandle, "_test_DbgGetBpxTypeAt", cb_test_DbgGetBpxTypeAt, true);
     if (!bRet) {
         LOG("register command failed for %s", "_test_DbgGetBpxTypeAt");
+    }
+    bRet = _plugin_registercommand(gPluginHandle, "_test_PageQuery", cb_test_PageQuery, true);
+    if (!bRet) {
+        LOG("register command failed for %s", "_test_PageQuery");
+    }
+    bRet = _plugin_registercommand(gPluginHandle, "_test_StepInAndQueryPage", cb_test_StepInAndQueryPage, true);
+    if (!bRet) {
+        LOG("register command failed for %s", "_test_StepInAndQueryPage");
     }
 }
 

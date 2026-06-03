@@ -1,14 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <string>
-#include <tuple>
 
 #include "StructDef.h"
 
 namespace Dbg
 {
-    std::tuple<size_t, size_t> GetMemBaseWithSize(size_t addr);
-
     SimulateRegs GetRegs();
 
     std::string GetAddrName(size_t addr);
@@ -17,5 +15,9 @@ namespace Dbg
 
     size_t RunToAddr(size_t addr);
 
-    bool MemRead(size_t addr, uint8_t *buf_output, size_t size);
+    size_t StepInto(int count = 1);
+
+    std::unique_ptr<uint8_t[]> MemReadEnhanced(size_t addr, size_t size);
+
+    std::pair<size_t, size_t> MemFindBaseAddrEnhanced(size_t addr);
 }

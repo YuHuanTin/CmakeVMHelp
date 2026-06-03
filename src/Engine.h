@@ -21,12 +21,18 @@ public:
     void run(StopReason stopReason, const std::string &instTarget);
 
 private:
+    enum EmuExitReason {
+        NORMAL,
+        SYSCALL
+    };
+
     StopReason  stopReason_    = PAGE_SWITCH;
     std::size_t runRegionBase_ = 0;
     std::size_t runRegionEnd_  = 0;
-    std::size_t stopAddr_      = 0;
+    std::size_t emuStopAddr_   = 0;
     std::string inst_target_;
 
+    EmuExitReason   emuExitReason_ = NORMAL;
     CodeTraceLogger traceLogger_;
 
     void hostBasicMemToEmu(std::size_t cip, std::size_t sp);
@@ -38,6 +44,8 @@ private:
     void unmapAllRegions();
 
     static void hookCode(uc_engine *uc, uint64_t address, uint32_t size, void *userData);
+
+    static void hookSyscall(uc_engine *uc, void *userData);
 
     static void hookMemValid(uc_engine *uc, uc_mem_type type, uint64_t address, int size, int64_t value, void *userData);
 
