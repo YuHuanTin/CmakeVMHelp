@@ -12,14 +12,17 @@
 
 
 bool cb_run_until_page_switch(int argc, char *argv[]) {
+    LOG("command: [%s]", __FUNCTION__)
     gEngine.run(PAGE_SWITCH);
     return true;
 }
 bool cb_run_until_breakpoint(int argc, char *argv[]) {
+    LOG("command: [%s]", __FUNCTION__)
     gEngine.run(REACHED_BP);
     return true;
 }
 bool cb_run_until_instruction(int argc, char *argv[]) {
+    LOG("command: [%s]", __FUNCTION__)
     if (argc < 2) {
         LOG("usage: vm_run_until_instruction <mnemonic>")
         return false;
@@ -29,6 +32,7 @@ bool cb_run_until_instruction(int argc, char *argv[]) {
     return true;
 }
 bool cb_run_until_call_return(int argc, char *argv[]) {
+    LOG("command: [%s]", __FUNCTION__)
     gEngine.run(REACHED_CALL_FINISH);
     return true;
 }

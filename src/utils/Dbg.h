@@ -17,6 +17,8 @@ namespace Dbg
 
     size_t StepInto(int count = 1);
 
+    bool RefreshMemMap();
+
     std::unique_ptr<uint8_t[]> MemReadEnhanced(size_t addr, size_t size);
 
     std::pair<size_t, size_t> MemFindBaseAddrEnhanced(size_t addr);

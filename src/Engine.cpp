@@ -60,6 +60,7 @@ void EmuEngine::run(StopReason stopReason) {
         }
 
         // run
+        LOG("[run-start] cip = 0x%016llx, csp = 0x%016llx", regs.cip, regs.csp)
         err = uc_emu_start(uc_, regs.cip, until, 0, 0);
         // refreshing last code
         traceLogger_.flush(Uc::GetRegs(uc_));

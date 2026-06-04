@@ -88,8 +88,8 @@ size_t Dbg::RunToAddr(size_t addr) {
         if (DbgIsBpDisabled(addr)) {
             EnableBpx(addr);
         }
+        DbgCmdExecDirect("go");
     }
-    DbgCmdExecDirect("go");
     _plugin_waituntilpaused();
     return GetRegs().cip;
 }
@@ -98,6 +98,10 @@ size_t Dbg::StepInto(int count) {
     DbgCmdExecDirect(std::format("sti {}", count).c_str());
     _plugin_waituntilpaused();
     return GetRegs().cip;
+}
+
+bool Dbg::RefreshMemMap() {
+    return DbgCmdExecDirect("meminfo r,0");
 }
 
 std::unique_ptr<uint8_t[]> Dbg::MemReadEnhanced(size_t addr, size_t size) {
@@ -173,24 +177,30 @@ std::unique_ptr<uint8_t[]> Dbg::MemReadEnhanced(size_t addr, size_t size) {
 }
 
 std::pair<size_t, size_t> Dbg::MemFindBaseAddrEnhanced(size_t addr) {
-    // size_t size = 0;
-    // size_t base = DbgMemFindBaseAddr(addr, &size); // todo, has bug
-    // if (base) {
-    //     return { base, size };
-    // }
-    // LOG("DbgMemFindBaseAddr query addr 0x%016llx base = 0, using fallback VirtualQueryEx", addr);
-
-    HANDLE hProcess = DbgGetProcessHandle();
-
-    MEMORY_BASIC_INFORMATION mbi = {};
-    if (!VirtualQueryEx(hProcess, reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
-        throw std::runtime_error(std::format("bad VirtualQueryEx call with addr: 0x{:016x}, err = {}", addr, GetLastError()));
+    if (!RefreshMemMap()) {
+        LOG("RefreshMemMap failed, addr = %llx", addr);
+        return {};
     }
-
-    const auto regionBase = reinterpret_cast<size_t>(mbi.BaseAddress);
-    const auto regionEnd  = regionBase + mbi.RegionSize;
-
-    LOG("[%s] regionBase = %016llx, regionEnd = %016llx, size = %016llx", __FUNCTION__, regionBase, regionEnd, mbi.RegionSize);
-
-    return { regionBase, 0x1000 };
+    size_t size = 0;
+    size_t base = DbgMemFindBaseAddr(addr, &size);
+    if (base) {
+        LOG("[%s] addr = %016llx, base = %016llx, size = %016llx", __FUNCTION__, addr, base, size);
+        return { base, size };
+    }
+    throw std::runtime_error(std::format("DbgMemFindBaseAddr failed, addr = %llx", addr));
+    // LOG("DbgMemFindBaseAddr query addr 0x%016llx base = 0, using fallback VirtualQueryEx", addr);
+    //
+    // HANDLE hProcess = DbgGetProcessHandle();
+    //
+    // MEMORY_BASIC_INFORMATION mbi = {};
+    // if (!VirtualQueryEx(hProcess, reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
+    //     throw std::runtime_error(std::format("bad VirtualQueryEx call with addr: 0x{:016x}, err = {}", addr, GetLastError()));
+    // }
+    //
+    // const auto regionBase = reinterpret_cast<size_t>(mbi.BaseAddress);
+    // const auto regionEnd  = regionBase + mbi.RegionSize;
+    //
+    // LOG("[%s] regionBase = %016llx, regionEnd = %016llx, size = %016llx", __FUNCTION__, regionBase, regionEnd, mbi.RegionSize);
+    //
+    // return { regionBase, 0x1000 };
 }
