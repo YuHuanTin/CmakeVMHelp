@@ -9,7 +9,7 @@
     },
     {
       "name": "capstone",
-      "version>=": "5.0.7",
+      "version>=": "5.0.9",
       "features": [
         "x86"
       ]

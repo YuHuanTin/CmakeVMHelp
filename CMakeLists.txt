@@ -1,8 +1,8 @@
 
 cmake_minimum_required(VERSION ${CMAKE_VERSION})
 
-#set(VCPKG_HOST_TRIPLET "x64-mingw-static")
-#set(VCPKG_TARGET_TRIPLET "x64-mingw-static")
+#set(VCPKG_HOST_TRIPLET "x64-mingw-dynamic")
+#set(VCPKG_TARGET_TRIPLET "x64-mingw-dynamic")
 set(XDBG_SDK_PATH "D:\\snapshot_2026-05-27_12-11\\pluginsdk")
 
 project(CmakeVMHelp CXX)

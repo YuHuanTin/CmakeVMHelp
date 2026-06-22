@@ -2,7 +2,7 @@
 
 ## 工具链
 
-llvm-mingw
+llvm-mingw （需要确保 PATH 中可运行 `clang.exe`）
 
 ## 依赖
 
@@ -13,9 +13,10 @@ llvm-mingw
 - 如果需要使用 llvm-mingw 工具链编译依赖，则将 [.vcpkg-configuration.json](.vcpkg-configuration.json) 重命名为
   `vcpkg-configuration.json` 并解除
   ```cmake
-  set(VCPKG_HOST_TRIPLET "x64-mingw-static")
-  set(VCPKG_TARGET_TRIPLET "x64-mingw-static")
+  set(VCPKG_HOST_TRIPLET "x64-mingw-dynamic")
+  set(VCPKG_TARGET_TRIPLET "x64-mingw-dynamic")
   ```
+  或使用 `x64-mingw-static`
 
 ## 设置项
 
