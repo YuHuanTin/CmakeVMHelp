@@ -37,4 +37,5 @@ capstone.dll
 ```
 libc++.dll
 libunwind.dll
+libwinpthread-1.dll
 ```
